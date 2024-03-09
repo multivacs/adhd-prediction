@@ -47,8 +47,8 @@ We use a configuration of 100 epochs, early stopper of 10, 10-fold cross validat
 | 1DCNN          | Robust        | 83.4     | 82.7    | 71.0   | **94.2**      |
 
 And the confussion matrix:
-![Confussion matrix with Standard Scaler](./img/confussion_matrix_st.png)
-![Confussion matrix with Robust Scaler](./img/confussion_matrix_ro.png)
+![Confussion matrix with Standard Scaler](img/confussion_matrix_st.png)
+![Confussion matrix with Robust Scaler](img/confussion_matrix_ro.png)
 
 As we can see in the table above, there is a slighty improvement in performance for some of the models when we use Robust Scaler, with a 8% plus in the case of Node recall, and a 2% in TabTransformer.
 This tell us that this models, are more sensitive to the outliers, while TabNet and 1DCNN performs the same.
