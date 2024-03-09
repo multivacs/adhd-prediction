@@ -19,7 +19,7 @@ Setup the global parameters according to your environment, the hyperparameters o
 Execute the main.py and wait for the results.
 
 
-## Methology
+## Methodology
 To evaluate the models, we have made a comparative study with cross-validation, in a configuration of 10 folds (Stratified K-Fold).
 
 For the metrics used, we calculate: precision, area under ROC curve, sensitivity and specificity.
