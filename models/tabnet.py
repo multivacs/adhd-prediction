@@ -1,22 +1,33 @@
-## Librerias
+"""
+MODEL TABNET
 
-import pandas as pd
+Model from a research group of Google that uses attention mechanisms.
+First, makes a transformation of the input (Feature transformer) to make it interpretable for
+the model.
+Then, this Feature transformer output is concatenated with a selection block named Attentive
+transformer, that apply the attention mechanism and select the features that seems more important.
+
+
+Author: Arik and Pfister
+Group: Google Cloud AI
+Type: Attention mechanisms
+Year: 2021
+"""
+
+
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from statistics import mean
-
 from sklearn.utils import class_weight
 from sklearn import metrics
 from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix
 from sklearn.model_selection import StratifiedKFold
-
 from tensorflow_addons.activations import sparsemax
-
 import warnings
 warnings.filterwarnings('ignore')
 
-# Métricas de valoración
+
+# Auxiliar functions
 def sensitivity(y_true,y_pred):
   res =  metrics.classification_report(y_true, y_pred, output_dict=True)
   return res['1']['recall']
@@ -50,11 +61,10 @@ class TabNet:
         self.optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate, clipnorm=10)
 
         # Second loss in None because we also output the importances
-        #self.loss = [tf.keras.losses.CategoricalCrossentropy(from_logits=False), None]
         self.loss = [tf.keras.losses.BinaryCrossentropy(from_logits=False), None]
 
 
-    # Transformar dataset en objetos TF, con el objetivo de acelerar el entrenamiento
+    # Transforms dataset in objects TensorFlow (better performance)
     def prepare_tf_dataset(
         self,
         X,
@@ -91,7 +101,7 @@ class TabNet:
         class_weights = class_weight.compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train)
         class_weights = dict(zip(np.unique(y_train), class_weights))
         
-        # Limpiamos el modelo
+        # Clean the model
         tabnet = TabNetBlock(num_features = X.shape[1],
                     output_dim = self.feature_dim,
                     feature_dim = self.feature_dim,
@@ -110,9 +120,8 @@ class TabNet:
             verbose=0,
             class_weight=class_weights)
         
-        # Calcular roc en test
+        # Calculate ROC for test
         test_preds, test_imps = tabnet.predict(test_ds, verbose=0) # WARNING tensorflow:5 out of the last 5 calls to <function Model.make_predict_function.<locals>.predict_function at 0x0000021A68F1C550> triggered tf.function retracing
-        #recall = np.round(sensitivity(y_test, np.round(test_preds[:, 1], 0)), 4)
         roc_auc = np.round(roc_auc_score(y_test, np.round(test_preds[:, 1], 0)), 4)
         return roc_auc
 
@@ -132,7 +141,7 @@ class TabNet:
             x_train_fold, x_test_fold = X.iloc[train_index], X.iloc[test_index]
             y_train_fold, y_test_fold = y[train_index], y[test_index]
 
-            # Particion para validación en el fit
+            # Split validation data
             x_train_fold , val_X , y_train_fold , val_y = train_test_split(x_train_fold , y_train_fold , random_state = random_state , test_size = 0.1, stratify=y_train_fold)
             
             #TF
@@ -144,7 +153,7 @@ class TabNet:
             class_weights = class_weight.compute_class_weight(class_weight='balanced', classes=np.unique(y_train_fold), y=y_train_fold)
             class_weights = dict(zip(np.unique(y_train_fold), class_weights))
             
-            # Limpiamos el modelo
+            # Clean the model
             tabnet = None
             tabnet = TabNetBlock(num_features = features,
                         output_dim = self.feature_dim,
@@ -164,7 +173,7 @@ class TabNet:
                 verbose=0,
                 class_weight=class_weights)
 
-            # Calcular roc en test
+            # Calculate ROC
             test_preds, test_imps = tabnet.predict(test_ds, verbose=0) # WARNING tensorflow:5 out of the last 5 calls to <function Model.make_predict_function.<locals>.predict_function at 0x0000021A68F1C550> triggered tf.function retracing
 
 
@@ -182,21 +191,22 @@ class TabNet:
 
             lst_result.append(result)
 
-        # Devolvemos los resultados de los fold y la matriz de confusion
+        # Fold results and confusion matrix
         return lst_result, confusion
 
 
 
 
 ## MODEL TABNET
-# Definimos el modelo TABNET
+# Define model structure
 
-# GLU activation layer: permite propagar los gradientes más profundo
+# GLU activation layer: allos deeper propagated gradients
 def glu(x, n_units=None):
     """Generalized linear unit nonlinear activation."""
     return x[:, :n_units] * tf.nn.sigmoid(x[:, n_units:])
 
-# Bloque con una capa Densa, un Batch Normalisation y una capa GLU
+
+# Block with a Fully Connected Layer, a Batch Normalisation and GLU
 class FeatureBlock(tf.keras.Model):
     """
     Implementation of a FL->BN->GLU block
@@ -225,8 +235,9 @@ class FeatureBlock(tf.keras.Model):
             return glu(x, self.feature_dim) # GLU activation applied to BN output
         return x
 
-# FeatureBlocks en serie que recoge los feature seleccionados en el Attentive, y los transforma para que el modelo los utilice
-# (en el paper original, utilizan 4 bloques, 2 con pesos compartidos y 2 independientes)
+# FeatureBlocks that collect the features selected in Attentive, and transform them so
+# the model can use them (in the original paper, they use 4 blocks, 2 with shared weights
+# and 2 independent)
 class FeatureTransformer(tf.keras.Model):
     def __init__(
         self,
@@ -267,7 +278,8 @@ class FeatureTransformer(tf.keras.Model):
     def shared_fcs(self):
         return [self.blocks[i].fc for i in range(self.n_shared)]
 
-# Se encarga de la selección de las feature características teniendo en cuenta la selección de los bloques anteriores
+
+# Selects the feature based on previous results
 class AttentiveTransformer(tf.keras.Model):
     def __init__(self, feature_dim):
         super(AttentiveTransformer, self).__init__()
@@ -280,7 +292,7 @@ class AttentiveTransformer(tf.keras.Model):
         x = self.block(x, training=training)
         return sparsemax(x * prior_scales)
 
-# AttentiveTransformer > FeatureBlock > AttentiveTransformer > ... > Outputs de cada step se pasan a una capa Densa para la regresión
+# AttentiveTransformer > FeatureBlock > AttentiveTransformer > ... > Outputs from every step to a FC layer
 class TabNetBlock(tf.keras.Model):
     def __init__(
         self,
@@ -393,10 +405,6 @@ class TabNetBlock(tf.keras.Model):
         self.add_loss(self.sparsity_coefficient * loss)
         
         return final_output, importance
-
-
-
-
 
 
 

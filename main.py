@@ -1,65 +1,78 @@
-## Librerias
+"""
+ADHD PREDICTION WITH NEURAL NETWORKS
+
+This script is designed to configure with your own data and specify the different analysis you want to make.
+For example, if you don't want to make an Hyperopt analysis, you can disable it by setting the flag to False. 
+
+Author: Mario
+Last Edited: 2024-02-26
+"""
+
 import math
 import time
 import datetime
 import pandas as pd
 import numpy as np
-
-# Hyperopt
 from hyperopt import fmin, hp, tpe, STATUS_OK, Trials
 from hyperopt.early_stop import no_progress_loss
-
-import statsmodels.api as sm
-import statsmodels.stats as sms
-
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import StandardScaler, RobustScaler
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = '2'
-
 import sys
 script_dir = os.path.dirname(__file__)
 rel_path = f'models'
 path = os.path.join(script_dir, rel_path)
 sys.path.append(path)
 
-# Modelos
+# Models
 from models.tabnet import TabNet
 from models.tabtransformer import TabTransformer
 from models.node import Node
 from models.DCNN import DCNN
 
-# Gráficos
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.preprocessing import StandardScaler, RobustScaler
+
+#-----------------------------------------------------------------------------------------------
+# Global Configuration Variables
+# These variables define the parameters and workflows applied for the rest of the script.
+#-----------------------------------------------------------------------------------------------
+FEATURE_ENGINEERING = False     # Do or not simple data analysis of the data (comparision between IQs of clinic and control groups, correlation matrix)
+HYPEROPT = False                # Do or not hyperopt adjustment
+EVALUATE = True                 # Do or not evaluate the models with KFold
+SCALER_NORMALIZER = "Standard"  # Normalization of numeric features Standard/Robust
+NUM_FOLDS = 10                  # Number of folds applied in KFold
+NUM_EPOCHS = 100                # Number of epochs done for each kfold training
+HO_EPOCHS = 100                 # Hyperopt epochs
+HO_MAXEVALS = 60                # Hyperopt max evaluations
+HO_LOSS_IMPROVE = 10            # Hyperopt early stop epochs without loss improvement
+SEED = 1234                     # Random seed
 
 
-# Parameters
-FEATURE_ENGINEERING = False
-HYPEROPT = False
-EVALUATE = True
-PREPROCESS = "Standard" # Standard/Robust
-NUM_FOLDS = 10
-NUM_EPOCHS = 100
-SEED = 1234
-
-# Hiperparámetros
+#-----------------------------------------------------------------------------------------------
+# MODEL HYPERPARAMETERS
+# These are the hyperparameters founded that works best with my configuration and data.
+#-----------------------------------------------------------------------------------------------
 best_tabnet = {'bn_momentum': 0.942772441153329, 'feature_dim': 128, 'learning_rate': 0.03737086735655166, 'n_steps': 5, 'relaxation_factor': 1.2000000000000002, 'sparsity': 0.0595285322427291}
 best_tabtransformer = {'depth': 4, 'dropout': 0.28774402657808856, 'embedding_dim': 64, 'heads': 8, 'learning_rate': 0.0015283238179232778, 'weight_decay': 0.07992657295500534}
 best_node = {'depth': 2, 'layer_dim': 384, 'learning_rate': 0.0012095595812000894, 'num_layers': 6}
 best_1dcnn = {'K': 8, 'cha_hidden': 128, 'cha_input': 192, 'drop_hidden': 0.11412807906220623, 'drop_input': 0.250317695794937, 'drop_out': 0.23413921322423242, 'sign_size': 128}
 
 
-
-################ Data ###############
+#---------------------------------------------------------------------------------------------------
+# DATASET SPECIFIC
+# Here you define the features that apply to your dataset, and the target feature (label supervised).
+#---------------------------------------------------------------------------------------------------
 # Column information
 NUMERIC_FEATURES = ['BD', 'SI', 'DS', 'PCn', 'CD', 'VC', 'LN', 'MR', 'CO', 'SS', 'VCI', 'PRI', 'WMI', 'PSI', 'FSIQ', 'GAI', 'CPI', 'GAI-CPI', 'WMI-PSI', 'GAI-WMI', 'GAI-FSIQ', 'PRI-CPI', 'FSIQ-CPI', 'VCI-CPI', 'PRI-WMI']
 CATEGORICAL_FEATURES = []
 FEATURES = list(NUMERIC_FEATURES) + list(CATEGORICAL_FEATURES)
 LABEL = 'ADHD'
 
-df = pd.read_csv('./dataset_nodupl.csv', sep=';', decimal=',')
+# Read dataset
+df = pd.read_csv('./dataset.csv', sep=';', decimal=',')
 
-# Eliminar duplicados
+# Drop duplicated samples
 df.drop_duplicates()
 
 
@@ -67,11 +80,11 @@ df.drop_duplicates()
 
 if FEATURE_ENGINEERING:
   
-  # Diferencias entre grupos clínico y control (medias)
-  g_clinic = df.loc[df['ADHD'] == 1]
-  g_control = df.loc[df['ADHD'] == 0]
-  x = ['FSIQ', 'VCI', 'PRI', 'WMI', 'PSI', 'GAI', 'CPI']
-
+  # Comparison between clinic/control groups
+  x = ['FSIQ', 'VCI', 'PRI', 'WMI', 'PSI', 'GAI', 'CPI']  # Features to analyze
+  g_clinic = df.loc[df[LABEL] == 1]
+  g_control = df.loc[df[LABEL] == 0]
+  
   g_clinic = g_clinic[x].mean(axis=0).to_numpy()
   g_control = g_control[x].mean(axis=0).to_numpy()
 
@@ -80,7 +93,7 @@ if FEATURE_ENGINEERING:
   plt.legend()
   plt.show()
 
-  # Matriz de correlacion
+  # Correlation matrix
   cormat = df.corr()
   print(cormat)
   sns.heatmap(cormat, annot=True)
@@ -88,33 +101,32 @@ if FEATURE_ENGINEERING:
 
 ################ Data Preprocessing ###############
 
-# Separar target
-X = df.drop(['ADHD'],axis =1)
-y = df['ADHD'].astype('int64')
+# Separate target label
+X = df.drop([LABEL],axis =1)
+y = df[LABEL].astype('int64')
 
 # Standard Scaler
-if PREPROCESS == "Standard":
+if SCALER_NORMALIZER == "Standard":
   scaler = StandardScaler()
   X.loc[:, NUMERIC_FEATURES] = scaler.fit_transform(X[NUMERIC_FEATURES])
 
 # Robust Scaler
-elif PREPROCESS == "Robust":
+elif SCALER_NORMALIZER == "Robust":
   scaler = RobustScaler(quantile_range=(20, 80))
   X.loc[:, NUMERIC_FEATURES] = scaler.fit_transform(X[NUMERIC_FEATURES])
 
 
 ################ Hyperparameter Tuning ###############
+  
 if HYPEROPT == True:
   best_tabnet = {}
   best_tabtransformer = {}
   best_node = {}
   best_1dcnn = {}
 
-  HO_EPOCHS = 100
-  HO_MAXEVALS = 60
   ho_time = time.time()
 
-  # Espacio de búsqueda
+  # Define searching space
   TabNet()
   space_tabnet = {
     'learning_rate': hp.loguniform('learning_rate', -7, 0),
@@ -152,7 +164,7 @@ if HYPEROPT == True:
   }
 
 
-  # Funciones objetivo
+  # Objective functions
   def objective_tabnet(space):
     model = TabNet(learning_rate=space['learning_rate'],
                    feature_dim=int(space['feature_dim']),
@@ -163,8 +175,8 @@ if HYPEROPT == True:
     
     roc = model.fit(X, y, epochs=HO_EPOCHS, random_state=SEED)
 
-    # Negativo para maximizar el valor, positivo para minimización
-    return{'loss': -roc, "status":STATUS_OK}
+    # Negative loss for maximization problems
+    return{'loss': -roc, "status": STATUS_OK}
 
   def objective_tabtransformer(space):
     model = TabTransformer(learning_rate=space['learning_rate'],
@@ -172,11 +184,11 @@ if HYPEROPT == True:
                            embedding_dim=int(space['embedding_dim']),
                            depth=int(space['depth']),
                            heads=int(space['heads']),
-                           dropout=space['dropout'])
+                           dropout=space['dropout'],
+                           NUMERIC_FEATURES = NUMERIC_FEATURES, CATEGORICAL_FEATURES = CATEGORICAL_FEATURES, LABEL = LABEL)
 
     roc = model.fit(X, y, epochs=HO_EPOCHS, random_state=SEED)
 
-    # Negativo para maximizar el valor, positivo para minimización
     return{'loss': -roc, "status":STATUS_OK}
 
   def objective_node(space):
@@ -187,7 +199,6 @@ if HYPEROPT == True:
 
     roc = model.fit(X, y, epochs=HO_EPOCHS, random_state=SEED)
 
-    # Negativo para maximizar el valor, positivo para minimización
     return{'loss': -roc, "status":STATUS_OK}
 
   def objective_1dcnn(space):
@@ -201,44 +212,43 @@ if HYPEROPT == True:
 
     roc = model.fit(X, y, epochs=HO_EPOCHS, random_state=SEED)
 
-    # Negativo para maximizar el valor, positivo para minimización
     return{'loss': -roc, "status":STATUS_OK}
 
 
-  # Búsqueda
+  # Searching
   trials = Trials()
   time_tabnet = time.time()
-  best_tabnet = fmin( fn = objective_tabnet, space=space_tabnet, algo= tpe.suggest, max_evals=HO_MAXEVALS, trials=trials, early_stop_fn=no_progress_loss(10))
+  best_tabnet = fmin( fn = objective_tabnet, space=space_tabnet, algo= tpe.suggest, max_evals=HO_MAXEVALS, trials=trials, early_stop_fn=no_progress_loss(HO_LOSS_IMPROVE))
   time_tabnet = str(datetime.timedelta(seconds=time.time() - time_tabnet))
-  loss_tabnet=trials.best_trial['result']['loss']
+  loss_tabnet = trials.best_trial['result']['loss']
   print(f"TABNET HYPEROPT = {best_tabnet}")
 
   trials = Trials()
   time_tabtransformer = time.time()
-  best_tabtransformer = fmin( fn = objective_tabtransformer, space=space_tabtransformer, algo= tpe.suggest, max_evals=HO_MAXEVALS, trials=trials, early_stop_fn=no_progress_loss(10))
+  best_tabtransformer = fmin( fn = objective_tabtransformer, space=space_tabtransformer, algo= tpe.suggest, max_evals=HO_MAXEVALS, trials=trials, early_stop_fn=no_progress_loss(HO_LOSS_IMPROVE))
   time_tabtransformer = str(datetime.timedelta(seconds=time.time() - time_tabtransformer))
-  loss_tabtransformer=trials.best_trial['result']['loss']
+  loss_tabtransformer = trials.best_trial['result']['loss']
   print(f"TABTRANSFORMER HYPEROPT = {best_tabtransformer}")
 
   trials = Trials()
   time_node = time.time()
-  best_node = fmin( fn = objective_node, space=space_node, algo= tpe.suggest, max_evals=HO_MAXEVALS, trials=trials, early_stop_fn=no_progress_loss(10))
+  best_node = fmin( fn = objective_node, space=space_node, algo= tpe.suggest, max_evals=HO_MAXEVALS, trials=trials, early_stop_fn=no_progress_loss(HO_LOSS_IMPROVE))
   time_node = str(datetime.timedelta(seconds=time.time() - time_node))
-  loss_node=trials.best_trial['result']['loss']
+  loss_node = trials.best_trial['result']['loss']
   print(f"NODE HYPEROPT = {best_node}")
 
   trials = Trials()
   time_1dcnn = time.time()
-  best_1dcnn = fmin( fn = objective_1dcnn, space=space_1dcnn, algo= tpe.suggest, max_evals=HO_MAXEVALS, trials=trials, early_stop_fn=no_progress_loss(10))
+  best_1dcnn = fmin( fn = objective_1dcnn, space=space_1dcnn, algo= tpe.suggest, max_evals=HO_MAXEVALS, trials=trials, early_stop_fn=no_progress_loss(HO_LOSS_IMPROVE))
   time_1dcnn = str(datetime.timedelta(seconds=time.time() - time_1dcnn))
-  loss_1dcnn=trials.best_trial['result']['loss']
+  loss_1dcnn = trials.best_trial['result']['loss']
   print(f"1DCNN HYPEROPT = {best_1dcnn}")
 
 
   # Save results
   ho_time = time.time() - ho_time
   ho_time = str(datetime.timedelta(seconds=ho_time))
-  print(f'Tiempo ejecución HyperOpt: {ho_time}')
+  print(f'Execution time HyperOpt: {ho_time}')
 
   now = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
   ts = math.floor(time.time())
@@ -247,7 +257,7 @@ if HYPEROPT == True:
   filepath = os.path.join(script_dir, rel_path)
 
   f = open(filepath, "w")
-  output = f'# {now}\n# Ajuste de hiperparametros con: [Tiempo={ho_time}, Epochs={HO_EPOCHS}, Max evals={HO_MAXEVALS}]\n\n'
+  output = f'# {now}\n# Hyperparameter tuning with: [Exec. time={ho_time}, Epochs={HO_EPOCHS}, Max evals={HO_MAXEVALS}]\n\n'
   output += f'TABNET HYPEROPT = {best_tabnet}\ntime={time_tabnet} ; best_loss={loss_tabnet}\n\n'
   output += f'TABTRANSFORMER HYPEROPT = {best_tabtransformer}\ntime={time_tabtransformer} ; best_loss={loss_tabtransformer}\n\n'
   output += f'NODE HYPEROPT = {best_node}\ntime={time_node} ; best_loss={loss_node}\n\n'
@@ -257,26 +267,32 @@ if HYPEROPT == True:
 
 
 ################ KFOLD ###############
+  
 if EVALUATE == False:
   sys.exit()
 
 # Create models
+names = ["TabNet", "TabTransformer", "Node", "1DCNN"]
 models = [TabNet(learning_rate=best_tabnet['learning_rate'],
                  feature_dim=int(best_tabnet['feature_dim']),
                  n_steps=int(best_tabnet['n_steps']),
                  relaxation_factor=best_tabnet['relaxation_factor'],
                  sparsity=best_tabnet['sparsity'],
-                 bn_momentum=best_tabnet['bn_momentum']), 
+                 bn_momentum=best_tabnet['bn_momentum']),
+
           TabTransformer(learning_rate=best_tabtransformer['learning_rate'],
                          weight_decay=best_tabtransformer['weight_decay'],
                          embedding_dim=int(best_tabtransformer['embedding_dim']),
                          depth=int(best_tabtransformer['depth']),
                          heads=int(best_tabtransformer['heads']),
-                         dropout=best_tabtransformer['dropout']), 
+                         dropout=best_tabtransformer['dropout'],
+                         NUMERIC_FEATURES = NUMERIC_FEATURES, CATEGORICAL_FEATURES = CATEGORICAL_FEATURES, LABEL = LABEL),
+
           Node(learning_rate=best_node['learning_rate'],
                layer_dim=int(best_node['layer_dim']),
                num_layers=int(best_node['num_layers']),
-               depth=int(best_node['depth'])), 
+               depth=int(best_node['depth'])),
+
           DCNN(sign_size=int(best_1dcnn['sign_size']),
                cha_input=int(best_1dcnn['cha_input']),
                cha_hidden=int(best_1dcnn['cha_hidden']),
@@ -285,8 +301,6 @@ models = [TabNet(learning_rate=best_tabnet['learning_rate'],
                drop_hidden=best_1dcnn['drop_hidden'],
                drop_out=best_1dcnn['drop_out'])
           ]
-names = ["TabNet", "TabTransformer", "Node", "1DCNN"]
-
 
 
 all_results = []
@@ -320,6 +334,6 @@ rel_path = f'results\\{ts}.txt'
 filepath = os.path.join(script_dir, rel_path)
 
 f = open(filepath, "w")
-f.write( f'# {now}\n# Results for: [Hyperparameters: True, Preprocess_scaler: {PREPROCESS}, Folds: {NUM_FOLDS}, Epochs: {NUM_EPOCHS}, Seed: {SEED}]\n\n' +
+f.write( f'# {now}\n# Results for: [Hyperparameters: True, Preprocess_scaler: {SCALER_NORMALIZER}, Folds: {NUM_FOLDS}, Epochs: {NUM_EPOCHS}, Seed: {SEED}]\n\n' +
         str(all_results[0]) + '\n' + str(all_results[1]) + '\n' + str(all_results[2]) + '\n' + str(all_results[3]))
 f.close()

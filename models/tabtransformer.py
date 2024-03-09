@@ -1,26 +1,34 @@
-## Librerias
+"""
+MODEL TABTRANSFORMER
 
-import pandas as pd
+This model attempts to transfer the same concepts that applies to transformers in areas like NLP
+and Computer Vision, to the context of tabular data.
+It uses an architecture of Transformer to perform an input processing and get those features more
+relevants, prior the FC perceptron.
+
+Author: Huang, Khetan, Cvitkovic & Karnin
+Group: Amazon AWS / PostEra
+Type: Transformers
+Year: 2020
+"""
+
+
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-
 from sklearn.utils import class_weight
 from sklearn import metrics
 from sklearn.model_selection import StratifiedKFold
-
-import matplotlib.pyplot as plt
-
-#new
 from tabtransformertf.models.fttransformer import FTTransformerEncoder, FTTransformer
 from tabtransformertf.utils.preprocessing import df_to_dataset
-from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.python.keras.callbacks import EarlyStopping
 import tensorflow_addons as tfa
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix
 import warnings
 warnings.filterwarnings('ignore')
 
-# Métricas de valoración
+
+# Auxiliar functions
 def sensitivity(y_true,y_pred):
   res =  metrics.classification_report(y_true, y_pred, output_dict=True)
   return res['1']['recall']
@@ -38,21 +46,19 @@ def add_matrix(matrixA, matrixB):
 
 
 
-# Column information
-NUMERIC_FEATURES = ['BD', 'SI', 'DS', 'PCn', 'CD', 'VC', 'LN', 'MR', 'CO', 'SS', 'VCI', 'PRI', 'WMI', 'PSI', 'FSIQ', 'GAI', 'CPI', 'GAI-CPI', 'WMI-PSI', 'GAI-WMI', 'GAI-FSIQ', 'PRI-CPI', 'FSIQ-CPI', 'VCI-CPI', 'PRI-WMI']
-CATEGORICAL_FEATURES = []
-FEATURES = list(NUMERIC_FEATURES) + list(CATEGORICAL_FEATURES)
-LABEL = 'ADHD'
-
 
 class TabTransformer:
-    def __init__(self, learning_rate=0.001, weight_decay=0.0001, embedding_dim=32, depth=4, heads=8, dropout=0.2):
+    def __init__(self, learning_rate=0.001, weight_decay=0.0001, embedding_dim=32, depth=4, heads=8, dropout=0.2, NUMERIC_FEATURES = [], CATEGORICAL_FEATURES = [], LABEL = ""):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.embedding_dim = embedding_dim
         self.depth = depth
         self.heads = heads
         self.dropout = dropout
+        self.NUMERIC_FEATURES = NUMERIC_FEATURES
+        self.CATEGORICAL_FEATURES = CATEGORICAL_FEATURES
+        self.LABEL = LABEL
+        self.FEATURES = list(self.NUMERIC_FEATURES) + list(self.CATEGORICAL_FEATURES)
 
         self.optimizer = tfa.optimizers.AdamW( learning_rate=learning_rate, weight_decay=weight_decay )
         self.early = EarlyStopping(monitor="val_loss", mode="min", patience=10, restore_best_weights=True)
@@ -62,32 +68,31 @@ class TabTransformer:
     # For hyperopt
     def fit(self, X, y, epochs, random_state=1234):
         # Set data types
-        X[CATEGORICAL_FEATURES] = X[CATEGORICAL_FEATURES].astype(str)
-        X[NUMERIC_FEATURES] = X[NUMERIC_FEATURES].astype(float)
+        X[self.CATEGORICAL_FEATURES] = X[self.CATEGORICAL_FEATURES].astype(str)
+        X[self.NUMERIC_FEATURES] = X[self.NUMERIC_FEATURES].astype(float)
 
         x_train , x_test , y_train , y_test = train_test_split(X , y , random_state = random_state , test_size = 0.3, stratify=y)
         x_train , x_val , y_train , y_val = train_test_split(x_train , y_train , random_state = random_state , test_size = 0.1, stratify=y_train)
         #TF
         train_tmp = x_train
-        train_tmp[LABEL] = y_train
+        train_tmp[self.LABEL] = y_train
         val_tmp = x_val
-        val_tmp[LABEL] = y_val
+        val_tmp[self.LABEL] = y_val
 
-        train_dataset = df_to_dataset(train_tmp, LABEL, batch_size=32)
-        val_dataset = df_to_dataset(val_tmp, LABEL, shuffle=False, batch_size=32)
-        test_dataset = df_to_dataset(x_test[FEATURES], None, shuffle=False, batch_size=32)
+        train_dataset = df_to_dataset(train_tmp, self.LABEL, batch_size=32)
+        val_dataset = df_to_dataset(val_tmp, self.LABEL, shuffle=False, batch_size=32)
+        test_dataset = df_to_dataset(x_test[self.FEATURES], None, shuffle=False, batch_size=32)
 
         # Class weight
         class_weights = class_weight.compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train)
         class_weights = dict(zip(np.unique(y_train), class_weights))
         
         ## MODEL TABTRANSFORMER
-        # Limpiampos y definimos el modelo TABTRANSFORMER
         ft_linear_encoder = FTTransformerEncoder(
-            numerical_features = NUMERIC_FEATURES,
-            categorical_features = CATEGORICAL_FEATURES,
-            numerical_data = x_train[NUMERIC_FEATURES].values,
-            categorical_data = x_train[CATEGORICAL_FEATURES].values,
+            numerical_features = self.NUMERIC_FEATURES,
+            categorical_features = self.CATEGORICAL_FEATURES,
+            numerical_data = x_train[self.NUMERIC_FEATURES].values,
+            categorical_data = x_train[self.CATEGORICAL_FEATURES].values,
             y = None,
             numerical_embedding_type='linear',
             embedding_dim=self.embedding_dim,
@@ -122,7 +127,7 @@ class TabTransformer:
             class_weight=class_weights
         )
 
-        # Calcular roc en test
+        # ROC
         test_preds = np.round(ft_linear_transformer.predict(test_dataset, verbose=0)['output'].ravel(), 0)
         #recall = np.round(sensitivity(y_test, test_preds), 4)
         roc_auc = np.round(roc_auc_score(y_test, test_preds), 4)
@@ -135,8 +140,8 @@ class TabTransformer:
     def fit_evaluate(self, X, y, cv=10, epochs=50, random_state=None, verbose=True):
 
         # Set data types
-        X[CATEGORICAL_FEATURES] = X[CATEGORICAL_FEATURES].astype(str)
-        X[NUMERIC_FEATURES] = X[NUMERIC_FEATURES].astype(float)
+        X[self.CATEGORICAL_FEATURES] = X[self.CATEGORICAL_FEATURES].astype(str)
+        X[self.NUMERIC_FEATURES] = X[self.NUMERIC_FEATURES].astype(float)
 
         ## KFOLD
         skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=random_state)
@@ -148,31 +153,31 @@ class TabTransformer:
             x_train_fold, x_test_fold = X.iloc[train_index], X.iloc[test_index]
             y_train_fold, y_test_fold = y[train_index], y[test_index]
 
-            # Particion para validación en el fit
+            # Validation split
             x_train_fold , val_X , y_train_fold , val_y = train_test_split(x_train_fold , y_train_fold , random_state = random_state , test_size = 0.1, stratify=y_train_fold)
             
             #TF
             train_tmp = x_train_fold
-            train_tmp[LABEL] = y_train_fold
+            train_tmp[self.LABEL] = y_train_fold
             val_tmp = val_X
-            val_tmp[LABEL] = val_y
+            val_tmp[self.LABEL] = val_y
 
-            train_dataset = df_to_dataset(train_tmp, LABEL, batch_size=32)
-            val_dataset = df_to_dataset(val_tmp, LABEL, shuffle=False, batch_size=32)
-            test_dataset = df_to_dataset(x_test_fold[FEATURES], None, shuffle=False, batch_size=32)
+            train_dataset = df_to_dataset(train_tmp, self.LABEL, batch_size=32)
+            val_dataset = df_to_dataset(val_tmp, self.LABEL, shuffle=False, batch_size=32)
+            test_dataset = df_to_dataset(x_test_fold[self.FEATURES], None, shuffle=False, batch_size=32)
 
             # Class weight
             class_weights = class_weight.compute_class_weight(class_weight='balanced', classes=np.unique(y_train_fold), y=y_train_fold)
             class_weights = dict(zip(np.unique(y_train_fold), class_weights))
             
             ## MODEL TABTRANSFORMER
-            # Limpiampos y definimos el modelo TABTRANSFORMER
+            # Clean the model
             ft_linear_encoder = None
             ft_linear_encoder = FTTransformerEncoder(
-                numerical_features = NUMERIC_FEATURES,
-                categorical_features = CATEGORICAL_FEATURES,
-                numerical_data = x_train_fold[NUMERIC_FEATURES].values,
-                categorical_data = x_train_fold[CATEGORICAL_FEATURES].values,
+                numerical_features = self.NUMERIC_FEATURES,
+                categorical_features = self.CATEGORICAL_FEATURES,
+                numerical_data = x_train_fold[self.NUMERIC_FEATURES].values,
+                categorical_data = x_train_fold[self.CATEGORICAL_FEATURES].values,
                 y = None,
                 numerical_embedding_type='linear',
                 embedding_dim=self.embedding_dim,
@@ -211,7 +216,7 @@ class TabTransformer:
                 class_weight=class_weights
             )
 
-            # Calcular roc en test
+            # ROC
             test_preds = ft_linear_transformer.predict(test_dataset, verbose=0)['output']
             test_preds = np.round(test_preds.ravel(), 0)
 
@@ -229,7 +234,7 @@ class TabTransformer:
 
             lst_result.append(result)
 
-        ## FIN
+
         return lst_result, confusion
 
 # My avg Results

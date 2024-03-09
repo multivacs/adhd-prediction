@@ -1,32 +1,33 @@
-## Librerias
+"""
+MODEL DCNN
+
+Solution given by a Kaggle user in a competition, that tries to fit the way convolutional networks
+work, for extract the more relevant features in a tabular dataset. 
+
+Author: Anonymous
+Source: https://www.kaggle.com/c/lish-moa/discussion/202256
+Type: Convolutional network
+Year: 2021
+"""
+
+
 import math
 import time
-import pandas as pd
 import numpy as np
-
 import torch
 from torch import nn
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader,TensorDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-
 from sklearn.model_selection import train_test_split
-from statistics import mean
-
-from sklearn.utils import class_weight
 from sklearn.model_selection import StratifiedKFold
-
-import matplotlib.pyplot as plt
-
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import average_precision_score, roc_auc_score, accuracy_score, confusion_matrix, classification_report
-
+from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, classification_report
 import logging
 logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
 
 
-# Métricas de valoración
+# Auxiliar functions
 def sensitivity(y_true,y_pred):
   res = classification_report(y_true, y_pred, output_dict=True)
   return res['1']['recall']
@@ -90,8 +91,8 @@ class DCNN:
         test_dataset = TensorDataset( torch.tensor(x_test.values, dtype=torch.float), torch.tensor(y_test.values.reshape(-1,1), dtype=torch.float  ))
         
 
-        # MODELO SoftOrdering1DCNN
-        # Limpiampos y definimos el modelo
+        # MODEL SoftOrdering1DCNN
+        # Clean model
         model = SoftOrdering1DCNN(
             input_dim=len(input_features), 
             output_dim=1,
@@ -114,7 +115,7 @@ class DCNN:
             DataLoader(val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         )
 
-        # Calcular roc en test
+        # ROC in test
         with torch.no_grad():
             model.eval()
             test_preds = model(torch.tensor(x_test.values, dtype=torch.float))
@@ -148,7 +149,7 @@ class DCNN:
             x_train_fold, x_test_fold = X.iloc[train_index], X.iloc[test_index]
             y_train_fold, y_test_fold = y[train_index], y[test_index]
 
-            # Particion para validación en el fit
+            # Validation split
             x_train_fold , val_X , y_train_fold , val_y = train_test_split(x_train_fold , y_train_fold , random_state = random_state , test_size = 0.1, stratify=y_train_fold)
 
             # Types
@@ -157,8 +158,8 @@ class DCNN:
             test_dataset = TensorDataset( torch.tensor(x_test_fold.values, dtype=torch.float), torch.tensor(y_test_fold.values.reshape(-1,1), dtype=torch.float  ))
             
 
-            # MODELO SoftOrdering1DCNN
-            # Limpiampos y definimos el modelo
+            # MODEL SoftOrdering1DCNN
+            # Clean model
             ts = math.floor(time.time())
 
             model = None
@@ -188,7 +189,7 @@ class DCNN:
 
             
 
-            # Calcular roc en test
+            # ROC
             with torch.no_grad():
                 model.eval()
                 test_preds = model(torch.tensor(x_test_fold.values, dtype=torch.float))
@@ -211,11 +212,10 @@ class DCNN:
 
             lst_result.append(result)
 
-        ## FIN
         return lst_result, confusion
 
 
-# Modelo
+# Model architecture
 class SoftOrdering1DCNN(pl.LightningModule):
 
     def __init__(self, input_dim, output_dim, sign_size=32, cha_input=16, cha_hidden=32, 

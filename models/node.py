@@ -1,25 +1,30 @@
-#!git clone https://github.com/Qwicen/node.git
+"""
+MODEL NODE
 
-## Librerias
+Neural Ovlivious Decision Ensembles, it uses an Oblivious Tree equivalent (the same trees used in CatBoost). 
+
+Author: Popov et al.
+Group: Yandex
+Source: https://github.com/Qwicen/node.git
+Type: Decision Trees
+Year: 2019
+"""
+
+
 import math
 import time
-import pandas as pd
 import numpy as np
-
 from qhoptim.pyt import QHAdam
 import torch, torch.nn as nn
 import torch.nn.functional as F
-
 # We access the NODE functionality through the /lib/ subfolder.
 import lib
-
 from sklearn.model_selection import train_test_split
-
 from sklearn.model_selection import StratifiedKFold
-
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, classification_report
 
-# Métricas de valoración
+
+# Auxiliar functions
 def sensitivity(y_true,y_pred):
   res = classification_report(y_true, y_pred, output_dict=True)
   return res['1']['recall']
@@ -36,9 +41,9 @@ def add_matrix(matrixA, matrixB):
     return result
 
 
-# Utilizar CUDA si disponible
+# Use CUDA if available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-#print(f'Using {device}')
+
 
 
 class Node:
