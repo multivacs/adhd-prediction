@@ -3,7 +3,7 @@
 ## Overview
 This study focus on explore, compare and get insights from recent neural networks applied to tabular data, specifically, the models used in this study are: TabNet, TabTransformer, Node and 1DCNN.\
 The task to solve is to use this models to predict the possible pressence of ADHD given the scores of a test.
-\\
+\ \
 The dataset used contains samples of 528 individuals from ages of 6-16 years old: 250 of them with positive ADHD diagnosis, and the rest 278 belongs to the group of control.
 The samples contains the scores from the different cognitive areas, evaluated with the WMIC test. Some of the features are: Block Design, Digit Span, Picture Concepts, Vocabulary, Verbal Comprehension Index, Working Memory Index...
 
